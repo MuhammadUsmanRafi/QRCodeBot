@@ -15,6 +15,8 @@ Welcome to the **QR Code Bot** repository! 📷 This is the hub for a Telegram b
 1. **Clone the Repository:**
    ```bash
    git clone [[https://github.com/your-username/qr-code-bot](https://github.com/MuhammadUsmanRafi/QRCodeBot).git](https://github.com/MuhammadUsmanRafi/QRCodeBot.git)
+
+   cd QRCodeBot
    ```
 
 2. **Install Dependencies:**
