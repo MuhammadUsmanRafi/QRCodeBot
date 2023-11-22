@@ -37,7 +37,6 @@ Welcome to the **QR Code Bot** repository! 📷 This is the hub for a Telegram b
    - Send a photo with a QR code to the bot.
    - Wait for the bot to process the image and provide validation results.
 
-   ![Bot Interaction](/path/to/bot_interaction_screenshot.png)
 
 ## Dependencies
 
@@ -50,10 +49,6 @@ Welcome to the **QR Code Bot** repository! 📷 This is the hub for a Telegram b
 ## Configuration
 
 - Set the `BOT_TOKEN` environment variable with your Telegram bot token.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow the guidelines outlined in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 
 ## 🙏 Acknowledgments
