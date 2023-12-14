@@ -1,17 +1,14 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import os
+
+import gspread
 import qrcode
-from PIL import Image
+from oauth2client.service_account import ServiceAccountCredentials
 
 # Determine the full path to the JSON credentials file
 credentials_file = os.path.join(os.getcwd(), "credentials.json")
 
 # Set up Google Sheets API credentials
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive", ]
 creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_file, scope)
 client = gspread.authorize(creds)
 
@@ -33,15 +30,12 @@ for row in data:
     # Create a formatted string for the data
     formatted_data = ""
     for key, value in row.items():
+        if key == "image_url":
+            continue
         formatted_data += f"{key}: {value}\n"
 
     # Generate a QR code for the formatted data
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4, )
     qr.add_data(formatted_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
@@ -49,3 +43,5 @@ for row in data:
     # Save the QR code image with a unique filename
     qr_code_filename = os.path.join(qr_code_directory, f"{row['_id']}.png")
     img.save(qr_code_filename)
+
+print("The QR code has been generated successfully.")

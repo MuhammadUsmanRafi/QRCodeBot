@@ -1,8 +1,10 @@
+import base64
 import os
 import sched
 import tempfile
 import threading
 import time
+from io import BytesIO
 
 import cv2
 import pymongo
@@ -70,11 +72,25 @@ def process_message(message: Message):
                 qr_data_formatted = convert_to_desired_format(qr_data)
                 print(qr_data_formatted)
                 matching_entry = collection.find_one(qr_data_formatted)
-                print(matching_entry)
 
                 if matching_entry is not None and "_id" in matching_entry and "_id" in qr_data_formatted:
                     if matching_entry["_id"] == qr_data_formatted["_id"]:
                         qr_data_message = f"✅ QR code data matched to\n{qr_data}\n\n*You can enter!*"
+
+                        # Retrieve and convert base64 image to send along with the reply
+                        image_base64 = matching_entry.get("image", "")
+                        image_data = base64.b64decode(image_base64)
+                        image_file = BytesIO(image_data)
+
+                        # Send the image along with the reply message
+                        image_reply = bot.send_photo(message.chat.id, image_file, caption=qr_data_message,
+                                                     parse_mode="Markdown")
+
+                        # Delete both messages after a delay
+                        with lock:
+                            message_ids[image_reply.chat.id] = image_reply.message_id
+                            threading.Thread(target=delete_message,
+                                             args=(image_reply.chat.id, image_reply.message_id)).start()
                     else:
                         qr_data_message = f"❌ QR code data does not match.\n{qr_data}\n\n*You can't enter.*"
                 else:
@@ -103,7 +119,7 @@ def process_message(message: Message):
 
 
 def delete_message(chat_id, message_id):
-    time.sleep(20)
+    time.sleep(30)
     try:
         bot.delete_message(chat_id, message_id)
         with lock:
