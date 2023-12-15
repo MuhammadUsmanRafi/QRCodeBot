@@ -71,6 +71,8 @@ for row in data:
         if isinstance(value, str):
             row[key] = value.strip()
 
+    if row["_id"] == "":
+        break
     print(f"{row['_id']}, {row['name']}")
     # Insert the row into MongoDB
     collection.insert_one(row)

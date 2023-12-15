@@ -17,6 +17,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "6536565219:AAF8XErOqDpKa88tfgtryYP5_m0_
 bot = TeleBot(token=BOT_TOKEN, num_threads=4)
 
 message_ids = {}
+process_state = {}
 
 lock = threading.Lock()
 
@@ -26,12 +27,17 @@ scheduler = sched.scheduler(time.time, time.sleep)
 mongo_client = pymongo.MongoClient("mongodb://localhost:27017")
 db = mongo_client["CUI_SAHIWAL"]
 collection = db["Participants_collection"]
+collection_2 = db["Incoming_Participants"]
 
 
 @bot.message_handler(commands=["start"])
 def start(message: Message):
-    start_message = ("👋 Hello! I am your *QR code bot*.\n"
-                     "Send me a photo with a QR code.")
+    start_message = ("👋 Hey there! I'm your *QR code bot.*\n\n"
+                     "Ready for some QR action? 📷 Just send me a photo with a QR code!\n\n"
+                     "To get started:\n"
+                     "➡️ Type 'in' to enable entrance functionality.\n"
+                     "➡️ Type 'out' to activate outgoing functionality.")
+
     bot.send_message(message.chat.id, start_message, parse_mode="Markdown")
 
 
@@ -71,67 +77,83 @@ def process_qr_data(qr_data, message):
 # Handle incoming messages (photos or text)
 @bot.message_handler(content_types=["photo", "text"])
 def process_message(message: Message):
+    global process_state
     # Check if the message contains a photo
     if message.content_type == "photo":
-        # Get the file ID of the last photo in the message
         photo_file = message.photo[-1].file_id
 
-        # Get file information for the photo
         file_info = bot.get_file(photo_file)
         file_path = file_info.file_path
 
-        # Download the photo
         downloaded_image = bot.download_file(file_path)
 
-        # Use a temporary file to store the downloaded image
         with tempfile.NamedTemporaryFile(delete=False) as temp_image:
             temp_image.write(downloaded_image)
             temp_image.seek(0)
             image = cv2.imread(temp_image.name)
 
-        # Check if the image is valid
         if image is not None:
-            # Decode QR codes from the image
             decoded_objects = decode(image)
 
-            # Extract QR data from the decoded objects
             qr_data = [obj.data.decode('utf-8') for obj in decoded_objects]
 
-            # Check if QR data is found in the image
             if qr_data:
-                # Extract the first QR code data (assuming there is only one)
                 qr_data = qr_data[0]
 
-                # Format and process the QR data
                 qr_data_formatted = convert_to_desired_format(qr_data)
-                matching_entry = collection.find_one(qr_data_formatted)
+                if process_state['state'] == 'in':
+                    matching_entry = collection.find_one(qr_data_formatted)
+                    if matching_entry is not None and "_id" in matching_entry and "_id" in qr_data_formatted:
+                        if matching_entry["_id"] == qr_data_formatted["_id"]:
+                            qr_data_message = f"QR code data matched to\n{qr_data}\n\n*✅ You can enter!*"
 
-                if matching_entry is not None and "_id" in matching_entry and "_id" in qr_data_formatted:
-                    if matching_entry["_id"] == qr_data_formatted["_id"]:
-                        qr_data_message = f"QR code data matched to\n{qr_data}\n\n*✅ You can enter!*"
+                            # Retrieve and convert base64 image to send along with the reply
+                            image_base64 = matching_entry.get("image", "")
+                            image_data = base64.b64decode(image_base64)
+                            image_file = BytesIO(image_data)
 
-                        # Retrieve and convert base64 image to send along with the reply
-                        image_base64 = matching_entry.get("image", "")
-                        image_data = base64.b64decode(image_base64)
-                        image_file = BytesIO(image_data)
-
-                        # Send the image along with the reply message
-                        reply_bot = bot.send_photo(message.chat.id, image_file, caption=qr_data_message,
-                                                   parse_mode="Markdown")
-                        collection.delete_one(qr_data_formatted)
+                            # Send the image along with the reply message
+                            send_data = qr_data_message.replace("_", "")
+                            reply_bot = bot.send_photo(message.chat.id, image_file, caption=send_data,
+                                                       parse_mode="Markdown")
+                            collection.delete_one(qr_data_formatted)
+                            updated_data = {"mobile_number": matching_entry.get("mobile_number", ""),
+                                            "email": matching_entry.get("email", ""), "image": image_base64}
+                            qr_data_formatted.update(updated_data)
+                            collection_2.insert_one(qr_data_formatted)
+                        else:
+                            qr_data_message = f"QR code data does not match.\n{qr_data}\n\n*❌ You can't enter.*"
+                            send_data = qr_data_message.replace("_", "")
+                            reply_bot = bot.reply_to(message, send_data, parse_mode="Markdown")
                     else:
-                        qr_data_message = f"QR code data does not match.\n{qr_data}\n\n*❌ You can't enter.*"
-                        reply_bot = bot.reply_to(message, qr_data_message, parse_mode="Markdown")
-                else:
-                    qr_data_message = f"QR code data not found in our database.\n{qr_data}\n\n*❌ You can't enter.*"
-                    reply_bot = bot.reply_to(message, qr_data_message, parse_mode="Markdown")
+                        qr_data_message = f"QR code data not found in our database.\n{qr_data}\n\n*❌ You can't enter.*"
+                        send_data = qr_data_message.replace("_", "")
+                        reply_bot = bot.reply_to(message, send_data, parse_mode="Markdown")
 
-                # Delete the original and reply messages after a delay
-                with lock:
-                    message_ids[message.chat.id] = message.message_id
-                    message_ids[reply_bot.chat.id] = reply_bot.message_id
-                    threading.Thread(target=delete_message, args=(message.chat.id, message.message_id)).start()
-                    threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
+                    # Delete the original and reply messages after a delay
+                    with lock:
+                        message_ids[message.chat.id] = message.message_id
+                        message_ids[reply_bot.chat.id] = reply_bot.message_id
+                        threading.Thread(target=delete_message, args=(message.chat.id, message.message_id)).start()
+                        threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
+                elif process_state['state'] == 'out':
+                    matching_entry = collection_2.find_one(qr_data_formatted)
+                    if matching_entry:
+                        collection.insert_one(matching_entry)
+                        collection_2.delete_one(qr_data_formatted)
+                        reply_bot = bot.reply_to(message, "✅ This person is authorized to re-enter using the "
+                                                          "provided QR code.", parse_mode="Markdown")
+                    else:
+                        qr_data = qr_data.replace("_", "")
+                        reply_bot = bot.reply_to(message, f"This individual does not have entry data or is not "
+                                                          f"considered a valid person.\n{qr_data}\n\n*"
+                                                          f"❌ You can't enter.*", parse_mode="Markdown")
+                    with lock:
+                        message_ids[message.chat.id] = message.message_id
+                        message_ids[reply_bot.chat.id] = reply_bot.message_id
+                        threading.Thread(target=delete_message, args=(message.chat.id, message.message_id)).start()
+                        threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
+
             else:
                 # If no QR code is found in the image
                 reply_bot = bot.reply_to(message, "❌ No QR code found in the image.")
@@ -147,11 +169,27 @@ def process_message(message: Message):
             bot.reply_to(message, "❌ Error processing the image. Please make sure the image is valid.")
     else:
         # If the message is not a photo
-        bot.reply_to(message, "❌ Please send only images with QR codes.")
+        text = message.text.lower()
+        if text == "out":
+            process_state["state"] = "out"
+            bot.reply_to(message,
+                         "Sure thing! 🤖🌟 This bot functionality will recognize when the user expresses a desire "
+                         "to venture outdoors, and it will capture and document that intention for you. 📝🚀\n\n OUT",
+                         parse_mode="Markdown")
+        elif text == "in":
+            process_state["state"] = "in"
+            bot.reply_to(message,
+                         "Certainly! 🤖✨ This bot state will interpret as the participant expressing a desire to "
+                         "enter, and it will efficiently record and document this intention for you. 📝🚪\n\n IN",
+                         parse_mode="Markdown")
+        else:
+            bot.reply_to(message,
+                         'Sure thing! 📩🤖 Simply send the text "in" or "out" to switch the bot\'s functionality '
+                         'state. 🔄✨', parse_mode="Markdown")
 
 
 def delete_message(chat_id, message_id):
-    time.sleep(30)
+    time.sleep(10)
     try:
         bot.delete_message(chat_id, message_id)
         with lock:

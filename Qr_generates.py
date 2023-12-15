@@ -27,10 +27,12 @@ if not os.path.exists(qr_code_directory):
 
 # Generate QR codes for each row's data
 for row in data:
+    if row["_id"] == "":
+        break
     # Create a formatted string for the data
     formatted_data = ""
     for key, value in row.items():
-        if key == "image_url":
+        if key == "image_url" or key == "mobile_number" or key == "email":
             continue
         formatted_data += f"{key}: {value}\n"
 

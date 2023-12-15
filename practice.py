@@ -103,7 +103,6 @@ def process_message(message: Message):
                 qr_data_formatted = convert_to_desired_format(qr_data)
                 if process_state['state'] == 'in':
                     matching_entry = collection.find_one(qr_data_formatted)
-
                     if matching_entry is not None and "_id" in matching_entry and "_id" in qr_data_formatted:
                         if matching_entry["_id"] == qr_data_formatted["_id"]:
                             qr_data_message = f"QR code data matched to\n{qr_data}\n\n*✅ You can enter!*"
@@ -114,19 +113,22 @@ def process_message(message: Message):
                             image_file = BytesIO(image_data)
 
                             # Send the image along with the reply message
-                            reply_bot = bot.send_photo(message.chat.id, image_file, caption=qr_data_message,
+                            send_data = qr_data_message.replace("_", "")
+                            reply_bot = bot.send_photo(message.chat.id, image_file, caption=send_data,
                                                        parse_mode="Markdown")
                             collection.delete_one(qr_data_formatted)
                             updated_data = {"mobile_number": matching_entry.get("mobile_number", ""),
-                                "email": matching_entry.get("email", ""), "image": image_base64}
+                                            "email": matching_entry.get("email", ""), "image": image_base64}
                             qr_data_formatted.update(updated_data)
                             collection_2.insert_one(qr_data_formatted)
                         else:
                             qr_data_message = f"QR code data does not match.\n{qr_data}\n\n*❌ You can't enter.*"
-                            reply_bot = bot.reply_to(message, qr_data_message, parse_mode="Markdown")
+                            send_data = qr_data_message.replace("_", "")
+                            reply_bot = bot.reply_to(message, send_data, parse_mode="Markdown")
                     else:
                         qr_data_message = f"QR code data not found in our database.\n{qr_data}\n\n*❌ You can't enter.*"
-                        reply_bot = bot.reply_to(message, qr_data_message, parse_mode="Markdown")
+                        send_data = qr_data_message.replace("_", "")
+                        reply_bot = bot.reply_to(message, send_data, parse_mode="Markdown")
 
                     # Delete the original and reply messages after a delay
                     with lock:
@@ -142,7 +144,9 @@ def process_message(message: Message):
                         reply_bot = bot.reply_to(message, "✅ This person is authorized to re-enter using the "
                                                           "provided QR code.", parse_mode="Markdown")
                     else:
-                        reply_bot = bot.reply_to(message, f"QR code data not found in our database.\n{qr_data}\n\n*"
+                        qr_data = qr_data.replace("_", "")
+                        reply_bot = bot.reply_to(message, f"This individual does not have entry data or is not "
+                                                          f"considered a valid person.\n{qr_data}\n\n*"
                                                           f"❌ You can't enter.*", parse_mode="Markdown")
                     with lock:
                         message_ids[message.chat.id] = message.message_id
