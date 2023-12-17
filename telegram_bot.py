@@ -28,6 +28,7 @@ mongo_client = pymongo.MongoClient("mongodb://localhost:27017")
 db = mongo_client["CUI_SAHIWAL"]
 collection = db["Participants_collection"]
 collection_2 = db["Incoming_Participants"]
+collection_states = db["states"]
 
 
 @bot.message_handler(commands=["start"])
@@ -55,33 +56,38 @@ def convert_to_desired_format(qr_data):
     return data
 
 
-# Function to process QR code data
+def save_process_state(chat_id, state):
+    state_data = {"chat_id": chat_id, "state": state}
+    collection_states.update_one({"chat_id": chat_id}, {"$set": state_data}, upsert=True)
+
+
+def get_process_state(chat_id):
+    state_data = collection_states.find_one({"chat_id": chat_id})
+    return state_data.get("state") if state_data else None
+
+
 def process_qr_data(qr_data, message):
-    # Extracted QR data
     qr_data_message = f"ℹ️ Processed QR code data: {qr_data}"
 
-    # Use bot.reply_to to send the reply message
     reply_bot = bot.reply_to(message, qr_data_message, parse_mode="Markdown")
 
-    # Delete the original message and the reply after a delay
     with lock:
-        # Store message IDs for deletion
         message_ids[message.chat.id] = message.message_id
         message_ids[reply_bot.chat.id] = reply_bot.message_id
-
-        # Use threading to delete messages after a delay
         threading.Thread(target=delete_message, args=(message.chat.id, message.message_id)).start()
         threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
 
 
-# Handle incoming messages (photos or text)
 @bot.message_handler(content_types=["photo", "text"])
 def process_message(message: Message):
     global process_state
-    # Check if the message contains a photo
+
+    saved_state = get_process_state(message.chat.id)
+    if saved_state:
+        process_state["state"] = saved_state
+
     if message.content_type == "photo":
         photo_file = message.photo[-1].file_id
-
         file_info = bot.get_file(photo_file)
         file_path = file_info.file_path
 
@@ -94,25 +100,19 @@ def process_message(message: Message):
 
         if image is not None:
             decoded_objects = decode(image)
-
             qr_data = [obj.data.decode('utf-8') for obj in decoded_objects]
 
             if qr_data:
                 qr_data = qr_data[0]
-
                 qr_data_formatted = convert_to_desired_format(qr_data)
                 if process_state['state'] == 'in':
                     matching_entry = collection.find_one(qr_data_formatted)
                     if matching_entry is not None and "_id" in matching_entry and "_id" in qr_data_formatted:
                         if matching_entry["_id"] == qr_data_formatted["_id"]:
                             qr_data_message = f"QR code data matched to\n{qr_data}\n\n*✅ You can enter!*"
-
-                            # Retrieve and convert base64 image to send along with the reply
                             image_base64 = matching_entry.get("image", "")
                             image_data = base64.b64decode(image_base64)
                             image_file = BytesIO(image_data)
-
-                            # Send the image along with the reply message
                             send_data = qr_data_message.replace("_", "")
                             reply_bot = bot.send_photo(message.chat.id, image_file, caption=send_data,
                                                        parse_mode="Markdown")
@@ -130,7 +130,6 @@ def process_message(message: Message):
                         send_data = qr_data_message.replace("_", "")
                         reply_bot = bot.reply_to(message, send_data, parse_mode="Markdown")
 
-                    # Delete the original and reply messages after a delay
                     with lock:
                         message_ids[message.chat.id] = message.message_id
                         message_ids[reply_bot.chat.id] = reply_bot.message_id
@@ -155,29 +154,24 @@ def process_message(message: Message):
                         threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
 
             else:
-                # If no QR code is found in the image
                 reply_bot = bot.reply_to(message, "❌ No QR code found in the image.")
-
-                # Delete the original and reply messages after a delay
                 with lock:
                     message_ids[message.chat.id] = message.message_id
                     message_ids[reply_bot.chat.id] = reply_bot.message_id
                     threading.Thread(target=delete_message, args=(message.chat.id, message.message_id)).start()
                     threading.Thread(target=delete_message, args=(reply_bot.chat.id, reply_bot.message_id)).start()
         else:
-            # If there is an error processing the image
             bot.reply_to(message, "❌ Error processing the image. Please make sure the image is valid.")
     else:
-        # If the message is not a photo
         text = message.text.lower()
         if text == "out":
-            process_state["state"] = "out"
+            save_process_state(message.chat.id, "out")
             bot.reply_to(message,
                          "Sure thing! 🤖🌟 This bot functionality will recognize when the user expresses a desire "
                          "to venture outdoors, and it will capture and document that intention for you. 📝🚀\n\n OUT",
                          parse_mode="Markdown")
         elif text == "in":
-            process_state["state"] = "in"
+            save_process_state(message.chat.id, "in")
             bot.reply_to(message,
                          "Certainly! 🤖✨ This bot state will interpret as the participant expressing a desire to "
                          "enter, and it will efficiently record and document this intention for you. 📝🚪\n\n IN",
@@ -200,4 +194,5 @@ def delete_message(chat_id, message_id):
 
 
 if __name__ == '__main__':
+    print("BOT STARTED")
     bot.polling(none_stop=True)
