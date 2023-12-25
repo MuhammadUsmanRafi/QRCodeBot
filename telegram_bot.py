@@ -12,7 +12,7 @@ from pyzbar.pyzbar import decode
 from telebot import TeleBot
 from telebot.types import Message
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "6536565219:AAF8XErOqDpKa88tfgtryYP5_m0_sMgMVh4")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
 
 bot = TeleBot(token=BOT_TOKEN, num_threads=4)
 
